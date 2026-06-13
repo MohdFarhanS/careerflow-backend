@@ -7,52 +7,50 @@ use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Services\AuthService;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
-    public function __construct(protected AuthService $authService) {}
+    public function __construct(private readonly AuthService $authService)
+    {
+    }
 
-    public function register(RegisterRequest $request)
+    public function register(RegisterRequest $request): JsonResponse
     {
         $user = $this->authService->register($request->validated());
 
-        Auth::login($user);
-
         return response()->json([
             'message' => 'Registrasi berhasil.',
-            'user' => new UserResource($user),
+            'user'    => new UserResource($user),
         ], 201);
     }
 
-    public function login(LoginRequest $request)
+    public function login(LoginRequest $request): JsonResponse
     {
-        $user = $this->authService->login($request->validated());
+        try {
+            $user = $this->authService->login($request->only('email', 'password'));
 
-        Auth::login($user);
-
-        $request->session()->regenerate();
-
-        return response()->json([
-            'message' => 'Login berhasil.',
-            'user' => new UserResource($user),
-        ]);
+            return response()->json([
+                'message' => 'Login berhasil.',
+                'user'    => new UserResource($user),
+            ]);
+        } catch (AuthenticationException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 401);
+        }
     }
 
-    public function logout(Request $request)
+    public function logout(Request $request): JsonResponse
     {
-        Auth::guard('web')->logout();
+        $this->authService->logout();
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return response()->json([
-            'message' => 'Logout berhasil.',
-        ]);
+        return response()->json(['message' => 'Logout berhasil.']);
     }
 
-    public function user(Request $request)
+    public function user(Request $request): UserResource
     {
         return new UserResource($request->user());
     }
