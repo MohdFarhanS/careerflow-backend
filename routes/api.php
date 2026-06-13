@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ApplicationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -17,6 +18,11 @@ Route::post('/login',    [AuthController::class, 'login']);
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->group(function () {
+    // Auth
     Route::get('/user',     [AuthController::class, 'user']);
     Route::post('/logout',  [AuthController::class, 'logout']);
+
+    // Applications
+    Route::get('applications/schema', [ApplicationController::class, 'schema']);
+    Route::apiResource('applications', ApplicationController::class);
 });

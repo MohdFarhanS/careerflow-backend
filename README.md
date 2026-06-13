@@ -83,6 +83,26 @@ Base URL: `http://localhost:8000/api`
 | `GET` | `/user` | Mendapatkan data user yang login |
 | `POST` | `/logout` | Logout user |
 
+### Applications (butuh autentikasi)
+
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| `GET` | `/applications/schema` | Metadata field form lamaran |
+| `GET` | `/applications` | List lamaran (filter + search + pagination) |
+| `POST` | `/applications` | Tambah lamaran baru |
+| `GET` | `/applications/{id}` | Detail satu lamaran |
+| `PUT` | `/applications/{id}` | Update lamaran |
+| `DELETE` | `/applications/{id}` | Hapus lamaran |
+
+#### Query Parameters `GET /applications`
+
+| Parameter | Tipe | Deskripsi |
+|-----------|------|-----------|
+| `search` | string | Cari berdasarkan nama perusahaan atau posisi |
+| `status` | string | Filter by status (`Applied`, `Screening`, dll.) |
+| `location` | string | Filter by lokasi (partial match) |
+| `sort` | string | `newest` (default) atau `oldest` |
+
 ### Request & Response
 
 #### POST `/register`
@@ -154,6 +174,53 @@ Base URL: `http://localhost:8000/api`
 }
 ```
 
+#### POST `/applications`
+
+**Request Body:**
+```json
+{
+    "company_name": "PT Contoh Jaya",
+    "position": "Backend Developer",
+    "applied_date": "2026-06-14",
+    "status": "Applied",
+    "location": "Jakarta",
+    "job_url": "https://example.com/job/123",
+    "salary_range": "8-12 juta",
+    "notes": "Referral dari teman"
+}
+```
+
+**Response `201`:**
+```json
+{
+    "message": "Lamaran berhasil ditambahkan.",
+    "application": {
+        "id": 1,
+        "company_name": "PT Contoh Jaya",
+        "position": "Backend Developer",
+        "location": "Jakarta",
+        "job_url": "https://example.com/job/123",
+        "applied_date": "2026-06-14",
+        "salary_range": "8-12 juta",
+        "status": "Applied",
+        "notes": "Referral dari teman",
+        "created_at": "2026-06-14T00:00:00.000000Z",
+        "updated_at": "2026-06-14T00:00:00.000000Z"
+    }
+}
+```
+
+#### GET `/applications`
+
+**Response `200`:**
+```json
+{
+    "data": [...],
+    "links": { "first": "...", "last": "...", "prev": null, "next": "..." },
+    "meta": { "current_page": 1, "per_page": 10, "total": 25 }
+}
+```
+
 ## Struktur Database
 
 ### `users`
@@ -218,18 +285,24 @@ Base URL: `http://localhost:8000/api`
 app/
 ├── Http/
 │   ├── Controllers/Api/
-│   │   └── AuthController.php
+│   │   ├── AuthController.php
+│   │   └── ApplicationController.php
 │   ├── Requests/
 │   │   ├── LoginRequest.php
-│   │   └── RegisterRequest.php
+│   │   ├── RegisterRequest.php
+│   │   ├── StoreApplicationRequest.php
+│   │   └── UpdateApplicationRequest.php
 │   └── Resources/
-│       └── UserResource.php
+│       ├── UserResource.php
+│       └── ApplicationResource.php
 ├── Models/
-│   └── User.php
+│   ├── User.php
+│   └── Application.php
 ├── Providers/
 │   └── AppServiceProvider.php
 └── Services/
-    └── AuthService.php
+    ├── AuthService.php
+    └── ApplicationService.php
 database/
 ├── migrations/
 └── seeders/
