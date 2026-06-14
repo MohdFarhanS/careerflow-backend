@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ApplicationController;
+use App\Http\Controllers\Api\InterviewController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\DashboardController;
 
@@ -29,4 +30,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Applications
     Route::get('applications/schema', [ApplicationController::class, 'schema']);
     Route::apiResource('applications', ApplicationController::class);
+
+    // Interviews
+    Route::apiResource('interviews', InterviewController::class)
+    ->only(['index', 'store', 'update', 'destroy']);
 });

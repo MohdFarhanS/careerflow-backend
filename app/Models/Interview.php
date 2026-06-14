@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Interview extends Model
 {
@@ -23,7 +22,13 @@ class Interview extends Model
         'interview_date' => 'date',
     ];
 
-    public function application(): BelongsTo
+    /**
+     * Interview selalu milik satu Application.
+     * Relasi ini dipakai untuk eager load di InterviewService
+     * agar kita bisa tampilkan company_name & position di frontend
+     * tanpa join manual.
+     */
+    public function application(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Application::class);
     }

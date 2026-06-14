@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\Http\Resources\InterviewResource;
 
 class ApplicationResource extends JsonResource
 {
@@ -19,7 +20,7 @@ class ApplicationResource extends JsonResource
             'salary_range' => $this->salary_range,
             'status'       => $this->status,
             'notes'        => $this->notes,
-            'interviews'   => $this->whenLoaded('interviews'),
+            'interviews'   => InterviewResource::collection($this->whenLoaded('interviews')),
             'created_at'   => $this->created_at?->toISOString(),
             'updated_at'   => $this->updated_at?->toISOString(),
         ];

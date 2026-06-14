@@ -63,7 +63,7 @@ Menggunakan **Laravel Sanctum SPA Authentication** (session-based, bukan token).
 
 1. Ambil CSRF cookie dulu: `GET /sanctum/csrf-cookie`
 2. Kirim request login/register dengan cookie tersebut
-3. Semua request berikutnya otentik via session cookie
+3. Semua request berikutnya autentik via session cookie
 
 ## API Endpoints
 
@@ -91,7 +91,7 @@ Base URL: `http://localhost:8000/api`
 | `GET` | `/applications/schema` | Metadata field form lamaran |
 | `GET` | `/applications` | List lamaran (filter + search + pagination) |
 | `POST` | `/applications` | Tambah lamaran baru |
-| `GET` | `/applications/{id}` | Detail satu lamaran |
+| `GET` | `/applications/{id}` | Detail satu lamaran (termasuk daftar interview) |
 | `PUT` | `/applications/{id}` | Update lamaran |
 | `DELETE` | `/applications/{id}` | Hapus lamaran |
 
@@ -103,6 +103,26 @@ Base URL: `http://localhost:8000/api`
 | `status` | string | Filter by status (`Applied`, `Screening`, dll.) |
 | `location` | string | Filter by lokasi (partial match) |
 | `sort` | string | `newest` (default) atau `oldest` |
+
+### Interviews (butuh autentikasi)
+
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| `GET` | `/interviews` | List interview milik user (filter + pagination) |
+| `POST` | `/interviews` | Tambah interview baru |
+| `PUT` | `/interviews/{id}` | Update interview |
+| `DELETE` | `/interviews/{id}` | Hapus interview |
+
+#### Query Parameters `GET /interviews`
+
+| Parameter | Tipe | Deskripsi |
+|-----------|------|-----------|
+| `upcoming` | string | `true` — hanya interview yang belum lewat |
+| `application_id` | integer | Filter interview per lamaran tertentu |
+| `interview_type` | string | `Online` atau `Offline` |
+| `sort` | string | `soonest` (default), `oldest`, atau `latest` |
+
+---
 
 ### Request & Response
 
@@ -151,27 +171,6 @@ Base URL: `http://localhost:8000/api`
         "email": "john@example.com",
         "created_at": "2026-06-14T00:00:00.000000Z"
     }
-}
-```
-
-#### GET `/user`
-
-**Response `200`:**
-```json
-{
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2026-06-14T00:00:00.000000Z"
-}
-```
-
-#### POST `/logout`
-
-**Response `200`:**
-```json
-{
-    "message": "Logout berhasil."
 }
 ```
 
@@ -226,7 +225,19 @@ Base URL: `http://localhost:8000/api`
         "salary_range": "8-12 juta",
         "status": "Applied",
         "notes": "Referral dari teman",
-        "interviews": [],
+        "interviews": [
+            {
+                "id": 1,
+                "application_id": 1,
+                "interview_date": "2026-06-20",
+                "interview_time": "10:00",
+                "interview_type": "Online",
+                "meeting_url": "https://meet.google.com/abc-xyz",
+                "notes": "Bawa portfolio",
+                "created_at": "2026-06-14T00:00:00.000000Z",
+                "updated_at": "2026-06-14T00:00:00.000000Z"
+            }
+        ],
         "created_at": "2026-06-14T00:00:00.000000Z",
         "updated_at": "2026-06-14T00:00:00.000000Z"
     }
@@ -245,6 +256,93 @@ Base URL: `http://localhost:8000/api`
     "meta": { "current_page": 1, "per_page": 10, "total": 25 }
 }
 ```
+
+#### POST `/interviews`
+
+**Request Body:**
+```json
+{
+    "application_id": 1,
+    "interview_date": "2026-06-20",
+    "interview_time": "10:00",
+    "interview_type": "Online",
+    "meeting_url": "https://meet.google.com/abc-xyz",
+    "notes": "Bawa portfolio"
+}
+```
+
+**Response `201`:**
+```json
+{
+    "message": "Interview berhasil ditambahkan.",
+    "interview": {
+        "id": 1,
+        "application_id": 1,
+        "company_name": "PT Contoh Jaya",
+        "position": "Backend Developer",
+        "applied_date": "2026-06-14",
+        "interview_date": "2026-06-20",
+        "interview_time": "10:00",
+        "interview_type": "Online",
+        "meeting_url": "https://meet.google.com/abc-xyz",
+        "notes": "Bawa portfolio",
+        "created_at": "2026-06-14T00:00:00.000000Z",
+        "updated_at": "2026-06-14T00:00:00.000000Z"
+    }
+}
+```
+
+#### GET `/interviews`
+
+**Response `200`:**
+```json
+{
+    "data": [
+        {
+            "id": 1,
+            "application_id": 1,
+            "company_name": "PT Contoh Jaya",
+            "position": "Backend Developer",
+            "applied_date": "2026-06-14",
+            "interview_date": "2026-06-20",
+            "interview_time": "10:00",
+            "interview_type": "Online",
+            "meeting_url": "https://meet.google.com/abc-xyz",
+            "notes": null,
+            "created_at": "2026-06-14T00:00:00.000000Z",
+            "updated_at": "2026-06-14T00:00:00.000000Z"
+        }
+    ],
+    "links": { "first": "...", "last": "...", "prev": null, "next": "..." },
+    "meta": { "current_page": 1, "per_page": 10, "total": 5 }
+}
+```
+
+#### GET `/dashboard`
+
+**Response `200`:**
+```json
+{
+    "total": 12,
+    "stats": {
+        "Applied": 4,
+        "Screening": 2,
+        "Technical Test": 1,
+        "Interview": 3,
+        "Offered": 1,
+        "Rejected": 1
+    },
+    "monthly_chart": [
+        { "month": "Jul 2025", "total": 0 },
+        { "month": "Aug 2025", "total": 2 },
+        "...",
+        { "month": "Jun 2026", "total": 3 }
+    ],
+    "recent_applications": [...]
+}
+```
+
+---
 
 ## Struktur Database
 
@@ -266,13 +364,13 @@ Base URL: `http://localhost:8000/api`
 | Kolom | Tipe | Keterangan |
 |-------|------|-----------|
 | `id` | bigint | Primary key |
-| `user_id` | bigint | FK ke `users` |
+| `user_id` | bigint | FK ke `users` (cascade delete) |
 | `company_name` | varchar(255) | Nama perusahaan |
 | `position` | varchar(255) | Posisi yang dilamar |
 | `location` | varchar(255) | Nullable |
 | `job_url` | varchar(2048) | Nullable |
 | `applied_date` | date | Tanggal melamar |
-| `salary_range` | varchar(255) | Nullable |
+| `salary_range` | varchar(100) | Nullable |
 | `status` | enum | `Applied`, `Screening`, `Technical Test`, `Interview`, `Offered`, `Rejected` |
 | `notes` | text | Nullable |
 | `created_at` | timestamp | — |
@@ -283,11 +381,11 @@ Base URL: `http://localhost:8000/api`
 | Kolom | Tipe | Keterangan |
 |-------|------|-----------|
 | `id` | bigint | Primary key |
-| `application_id` | bigint | FK ke `applications` |
+| `application_id` | bigint | FK ke `applications` (cascade delete) |
 | `interview_date` | date | Tanggal interview |
-| `interview_time` | time | Jam interview |
+| `interview_time` | time | Jam interview (format HH:MM) |
 | `interview_type` | enum | `Online`, `Offline` |
-| `meeting_url` | varchar(255) | Nullable |
+| `meeting_url` | varchar(255) | URL meeting, nullable |
 | `notes` | text | Nullable |
 | `created_at` | timestamp | — |
 | `updated_at` | timestamp | — |
@@ -297,12 +395,16 @@ Base URL: `http://localhost:8000/api`
 | Kolom | Tipe | Keterangan |
 |-------|------|-----------|
 | `id` | bigint | Primary key |
-| `user_id` | bigint | FK ke `users` |
+| `user_id` | bigint | FK ke `users` (cascade delete) |
 | `type` | enum | `CV`, `Portfolio` |
 | `file_name` | varchar(255) | Nama file original |
 | `file_path` | varchar(255) | Path penyimpanan |
 | `created_at` | timestamp | — |
 | `updated_at` | timestamp | — |
+
+> Tabel `documents` sudah ada di database tetapi fitur belum diimplementasi (fase berikutnya).
+
+---
 
 ## Struktur Folder
 
@@ -312,15 +414,19 @@ app/
 │   ├── Controllers/Api/
 │   │   ├── AuthController.php
 │   │   ├── ApplicationController.php
-│   │   └── DashboardController.php
+│   │   ├── DashboardController.php
+│   │   └── InterviewController.php
 │   ├── Requests/
 │   │   ├── LoginRequest.php
 │   │   ├── RegisterRequest.php
 │   │   ├── StoreApplicationRequest.php
-│   │   └── UpdateApplicationRequest.php
+│   │   ├── UpdateApplicationRequest.php
+│   │   ├── StoreInterviewRequest.php
+│   │   └── UpdateInterviewRequest.php
 │   └── Resources/
 │       ├── UserResource.php
-│       └── ApplicationResource.php
+│       ├── ApplicationResource.php
+│       └── InterviewResource.php
 ├── Models/
 │   ├── User.php
 │   ├── Application.php
@@ -330,7 +436,8 @@ app/
 └── Services/
     ├── AuthService.php
     ├── ApplicationService.php
-    └── DashboardService.php
+    ├── DashboardService.php
+    └── InterviewService.php
 database/
 ├── migrations/
 └── seeders/
