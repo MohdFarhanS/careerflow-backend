@@ -1,221 +1,354 @@
-# Architecture — CareerFlow Backend
+# Architecture - CareerFlow Backend
 
-Dokumentasi arsitektur teknis untuk backend CareerFlow. Dibaca bersama `CLAUDE.md` (konvensi kode) dan `README.md` (setup & API reference).
+Dokumentasi ini menjelaskan arsitektur teknis backend CareerFlow. Baca bersama `README.md` untuk setup, konfigurasi environment, dan referensi endpoint.
 
----
+## Ringkasan
 
-## Pola Utama: Controller → Service → Model
+CareerFlow memakai Laravel 12 dengan API JSON, session authentication via Sanctum, dan pemisahan tanggung jawab yang sederhana:
 
-Setiap fitur mengikuti alur tiga lapis yang konsisten:
-
-```
+```text
 HTTP Request
-    │
-    ▼
-FormRequest          ← validasi input + otorisasi
-    │
-    ▼
-Controller           ← terima request, panggil service, kembalikan response
-    │
-    ▼
-Service              ← semua logika bisnis di sini
-    │
-    ▼
-Eloquent Model       ← akses database via ORM
-    │
-    ▼
-JsonResource         ← transformasi output JSON
-    │
-    ▼
-HTTP Response
+  -> Middleware
+  -> FormRequest
+  -> Controller
+  -> Service
+  -> Eloquent Model
+  -> JsonResource
+  -> HTTP Response
 ```
 
-**Aturan keras:**
-- Controller tidak boleh berisi logika bisnis — hanya dispatch ke Service.
-- Service tidak boleh berisi raw SQL — hanya via Eloquent Model dan scope-nya.
-- Response tidak pernah return raw Model — selalu melalui `JsonResource`.
-- Validasi tidak pernah di controller — selalu di kelas `FormRequest` tersendiri.
+Prinsip utama:
 
----
+- Controller menangani request orchestration dan response.
+- FormRequest menangani validasi dan otorisasi request.
+- Service menangani logika bisnis.
+- Model menangani relasi, casts, fillable, dan query scopes.
+- Resource menangani bentuk JSON response.
 
-## Layer Detail
+## Routing
 
-### Controller (`app/Http/Controllers/Api/`)
+Route utama ada di `routes/api.php`.
 
-Tanggung jawab minimal: inject FormRequest, panggil Service, return Resource atau JsonResponse.
+Public auth routes:
 
 ```php
-// Pola standar untuk store
-public function store(StoreXxxRequest $request): JsonResponse
+Route::middleware('throttle:5,1')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+});
+```
+
+Protected routes:
+
+```php
+Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
+    Route::get('/user', [AuthController::class, 'user']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/dashboard', [DashboardController::class, 'index']);
+    Route::get('applications/schema', [ApplicationController::class, 'schema']);
+    Route::apiResource('applications', ApplicationController::class);
+    Route::apiResource('interviews', InterviewController::class)
+        ->only(['index', 'store', 'update', 'destroy']);
+});
+```
+
+## Middleware
+
+Middleware dikonfigurasi di `bootstrap/app.php`.
+
+- `statefulApi()` mengaktifkan flow Sanctum SPA.
+- `SecurityHeaders` dipasang pada API middleware group.
+- Exception renderer khusus `ThrottleRequestsException` mengubah response rate limit menjadi JSON `429`.
+
+`SecurityHeaders` menambahkan header berikut pada response API:
+
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+
+## Authentication
+
+Auth menggunakan Sanctum SPA berbasis session, bukan token API.
+
+Flow login:
+
+```text
+Frontend -> GET /sanctum/csrf-cookie
+Frontend -> POST /api/login
+Laravel  -> regenerate session
+Frontend -> request API berikutnya dengan session cookie
+```
+
+Flow logout:
+
+```text
+POST /api/logout
+  -> AuthService::logout()
+  -> guard web logout
+  -> invalidate session
+  -> regenerate CSRF token
+```
+
+`AuthService` adalah tempat login, register, dan logout. Controller tetap tipis dan mengembalikan `UserResource`.
+
+Public auth mutation dari frontend tetap mengambil CSRF cookie terlebih dahulu. Ini berlaku untuk register, login, forgot password, dan reset password karena request dikirim dari SPA dengan cookie Sanctum.
+
+## Password Reset
+
+Password reset memakai broker default Laravel:
+
+- Config broker: `config/auth.php`
+- Tabel token: `password_reset_tokens`
+- Expire token: 60 menit
+- Throttle token: 60 detik
+
+Flow forgot password:
+
+```text
+Frontend -> GET /sanctum/csrf-cookie
+POST /api/forgot-password
+  -> ForgotPasswordRequest
+  -> Password::sendResetLink()
+  -> return 200 tanpa expose status email
+```
+
+Flow reset password:
+
+```text
+Frontend -> GET /sanctum/csrf-cookie
+POST /api/reset-password
+  -> ResetPasswordRequest
+  -> Password::reset()
+  -> update password
+  -> rotate remember_token
+  -> dispatch PasswordReset event
+```
+
+URL reset dibuat di `AppServiceProvider`:
+
+```text
+{FRONTEND_URL}/reset-password?token={token}&email={email}
+```
+
+`User` memakai cast `password => hashed`, jadi password baru cukup diisi plain value pada model. Eloquent akan melakukan hashing.
+
+## Password Policy
+
+Register dan reset password memakai aturan:
+
+- Minimal 8 karakter.
+- Mengandung huruf besar dan kecil.
+- Mengandung angka.
+- Harus cocok dengan `password_confirmation`.
+
+Aturan register ada di `RegisterRequest`. Aturan reset ada di `ResetPasswordRequest`.
+
+## CORS dan Frontend URL
+
+`config/cors.php` membaca origin dari environment:
+
+```php
+env('FRONTEND_URL', 'http://localhost:5173')
+env('FRONTEND_URL_LOCAL', 'http://localhost:3000')
+```
+
+`config/app.php` menyimpan `frontend_url` untuk pembuatan link reset password:
+
+```php
+'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173')
+```
+
+Gunakan `FRONTEND_URL` sebagai sumber utama di production. `FRONTEND_URL_LOCAL` hanya untuk development.
+
+## Controller Layer
+
+Controller berada di `app/Http/Controllers/Api`.
+
+Tanggung jawab:
+
+- Menerima FormRequest atau Request.
+- Memanggil service.
+- Mengembalikan `JsonResponse` atau `JsonResource`.
+- Melakukan otorisasi manual hanya untuk operasi tanpa FormRequest, seperti show/destroy tertentu.
+
+Contoh pola:
+
+```php
+public function store(StoreApplicationRequest $request): JsonResponse
 {
-    $result = $this->xxxService->create($request->validated());
-    return response()->json(['message' => '...', 'data' => new XxxResource($result)], 201);
+    $application = $this->applicationService->create($request->validated());
+
+    return response()->json([
+        'message' => 'Lamaran berhasil ditambahkan.',
+        'application' => new ApplicationResource($application),
+    ], 201);
 }
 ```
 
-Otorisasi di controller hanya untuk kasus yang tidak bisa dilakukan di FormRequest (lihat bagian Otorisasi di bawah).
+## Service Layer
 
-### Service (`app/Services/`)
+Service berada di `app/Services`.
 
-Berisi semua logika bisnis. Menerima array data atau Model, mengembalikan Model atau koleksi.
+Tanggung jawab:
 
-```php
-// Pola standar: getAll dengan filter, create, update, delete
-public function getAll(array $filters): LengthAwarePaginator { ... }
-public function create(array $data): Model { ... }
-public function update(Model $model, array $data): Model { ... }
-public function delete(Model $model): void { ... }
+- Logika bisnis.
+- Query Eloquent yang dibutuhkan fitur.
+- Create, update, delete, dan aggregasi data.
+
+Service tidak membuat response HTTP dan tidak membaca request langsung.
+
+Service saat ini:
+
+- `AuthService`
+- `ApplicationService`
+- `InterviewService`
+- `DashboardService`
+
+## FormRequest Layer
+
+Request berada di `app/Http/Requests`.
+
+Tanggung jawab:
+
+- `authorize()` untuk izin request.
+- `rules()` untuk validasi.
+- `messages()` untuk pesan validasi Bahasa Indonesia.
+
+Request auth:
+
+- `RegisterRequest`
+- `LoginRequest`
+- `ForgotPasswordRequest`
+- `ResetPasswordRequest`
+
+Request domain:
+
+- `StoreApplicationRequest`
+- `UpdateApplicationRequest`
+- `StoreInterviewRequest`
+- `UpdateInterviewRequest`
+
+## Resource Layer
+
+Resource berada di `app/Http/Resources`.
+
+Gunakan Resource untuk semua output model:
+
+- `UserResource`
+- `ApplicationResource`
+- `InterviewResource`
+
+Aturan:
+
+- Jangan return raw model dari controller.
+- Gunakan `whenLoaded()` untuk relasi opsional.
+- Format date/datetime secara eksplisit sebelum dikirim ke JSON.
+
+## Model dan Relasi
+
+Relasi utama:
+
+```text
+User
+  -> hasMany Application
+Application
+  -> belongsTo User
+  -> hasMany Interview
+Interview
+  -> belongsTo Application
 ```
 
-Service tidak tahu tentang HTTP request atau response. Dependency injection via constructor.
-
-### FormRequest (`app/Http/Requests/`)
-
-Dua tanggung jawab: validasi (`rules()`) dan otorisasi (`authorize()`).
-
-- `authorize()` mengembalikan `bool` — `false` → Laravel throw 403
-- `rules()` mendefinisikan aturan validasi
-- `messages()` mendefinisikan pesan error dalam Bahasa Indonesia
-
-### Resource (`app/Http/Resources/`)
-
-Transformasi Model → array JSON. Selalu extend `JsonResource`.
-
-- Gunakan `$this->whenLoaded('relation', ...)` untuk relasi opsional — mencegah N+1 dan key hanya muncul jika relasi sudah di-load.
-- Selalu format tanggal secara eksplisit: `->toDateString()` untuk `date`, `->toISOString()` untuk `datetime`.
-- Untuk collection relasi, gunakan `RelatedResource::collection($this->whenLoaded('items'))`.
-
-### Model (`app/Models/`)
-
-Model berisi: `$fillable`, `$casts`, relasi, dan query scopes.
-
-- Scopes (`scopeXxx`) untuk filter yang reusable — dipanggil sebagai method chaining di Service.
-- Cast `'date'` pada kolom tanggal mengembalikan Carbon object — gunakan `->toDateString()` saat membandingkan dengan string atau mengembalikan ke JSON.
-
----
+Interview tidak menyimpan `user_id`. Kepemilikan interview selalu ditelusuri melalui `interview -> application -> user_id`.
 
 ## Otorisasi
 
-Dua pola otorisasi digunakan secara konsisten:
+Dua pola otorisasi:
 
-### Pola 1: FormRequest `authorize()` (untuk create & update)
+1. FormRequest `authorize()` untuk create/update yang punya request body atau route model.
+2. Cek manual di controller untuk show/destroy yang tidak memakai FormRequest.
 
-Digunakan ketika data yang dibutuhkan untuk otorisasi tersedia di route binding atau request body.
-
-```php
-// Contoh: update application — cek via route param
-public function authorize(): bool
-{
-    return $this->route('application')->user_id === auth()->id();
-}
-
-// Contoh: store interview — cek application_id dari body
-public function authorize(): bool
-{
-    $application = Application::find($this->application_id);
-    return $application && $application->user_id === $this->user()->id;
-}
-```
-
-### Pola 2: Cek manual di Controller (untuk show & destroy)
-
-Digunakan untuk operasi yang tidak memiliki FormRequest (tidak ada body untuk divalidasi).
+Contoh cek manual application:
 
 ```php
-// Cek langsung (applications)
 if ($application->user_id !== auth()->id()) {
     return response()->json(['message' => 'Forbidden.'], 403);
 }
+```
 
-// Traverse relasi (interviews — tidak ada user_id langsung)
+Contoh cek manual interview:
+
+```php
 if ($interview->application->user_id !== auth()->id()) {
     return response()->json(['message' => 'Tidak diizinkan.'], 403);
 }
 ```
 
----
+## Database
 
-## Database & Relasi
+Tabel utama:
 
-### Hierarki kepemilikan
+- `users`
+- `password_reset_tokens`
+- `sessions`
+- `applications`
+- `interviews`
+- `documents`
 
-```
-User
- └── Application (user_id FK, cascade delete)
-      └── Interview (application_id FK, cascade delete)
-```
+Cascade delete:
 
-Interview tidak punya `user_id` — kepemilikannya selalu ditelusuri via `interview → application → user_id`.
+- Hapus `users` akan menghapus `applications` miliknya.
+- Hapus `applications` akan menghapus `interviews` miliknya.
 
-### Cascade Delete
+`documents` sudah memiliki migration, tetapi API dokumen belum diimplementasikan.
 
-Semua FK menggunakan `->onDelete('cascade')`:
-- Hapus User → semua Application dan Interview-nya ikut terhapus
-- Hapus Application → semua Interview-nya ikut terhapus
+## Query dan Performance
 
-### Query Scopes (Application Model)
+Application filtering memakai query scopes pada `Application`:
 
-```php
-scopeSearch($query, ?string $keyword)    // LIKE pada company_name + position
-scopeByStatus($query, ?string $status)  // exact match, skip jika 'all'
-scopeByLocation($query, ?string $location) // LIKE pada location
-```
+- `scopeSearch`
+- `scopeByStatus`
+- `scopeByLocation`
 
-### Eager Loading
+Interview list memakai eager loading `application` karena `InterviewResource` membutuhkan data perusahaan dan posisi dari lamaran.
 
-InterviewService selalu `with('application')` untuk menghindari N+1 — InterviewResource butuh `company_name` dan `position` dari Application.
+Dashboard memakai aggregasi query untuk status dan monthly chart agar tidak perlu query berulang per status.
 
-DashboardService menggunakan raw query dengan `groupBy` untuk aggregasi status dalam satu query, bukan N query per status.
-
----
-
-## Autentikasi (Sanctum SPA)
-
-Session-based, bukan token. Penting untuk dipahami:
-
-1. Frontend hit `GET /sanctum/csrf-cookie` → browser menyimpan XSRF-TOKEN cookie
-2. Frontend kirim POST `/api/login` dengan X-XSRF-TOKEN header
-3. Laravel mengembalikan session cookie
-4. Semua request berikutnya authenticated via session cookie
-
-Middleware `statefulApi()` di `bootstrap/app.php` mengaktifkan Sanctum untuk request SPA.
-
-**Jangan** ganti ke token-based (`createToken()`) — ini akan mempengaruhi cara frontend mengirim semua request.
-
----
-
-## Fitur yang Sudah Diimplementasi
+## Fitur
 
 | Fitur | Model | Migration | Service | Controller | Request | Resource |
-|-------|-------|-----------|---------|------------|---------|----------|
-| Auth | User | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Applications | Application | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Dashboard | — | — | ✓ | ✓ | — | — |
-| Interviews | Interview | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Documents | — | ✓ | — | — | — | — |
+| --- | --- | --- | --- | --- | --- | --- |
+| Auth session | User | Ya | Ya | Ya | Ya | Ya |
+| Password reset | User | Ya | Broker Laravel | Ya | Ya | Tidak |
+| Applications | Application | Ya | Ya | Ya | Ya | Ya |
+| Interviews | Interview | Ya | Ya | Ya | Ya | Ya |
+| Dashboard | Application | Tidak khusus | Ya | Ya | Tidak | Menggunakan ApplicationResource |
+| Documents | Belum | Ya | Belum | Belum | Belum | Belum |
 
----
+## Konvensi Penambahan Fitur
 
-## Konvensi Penamaan File
+Urutan yang disarankan:
 
+1. Tambah atau sesuaikan migration.
+2. Tambah Model dengan fillable, casts, relasi, dan scopes.
+3. Tambah Service untuk logika bisnis.
+4. Tambah FormRequest untuk validasi dan otorisasi.
+5. Tambah Resource untuk response JSON.
+6. Tambah Controller di `app/Http/Controllers/Api`.
+7. Daftarkan route di `routes/api.php`.
+8. Tambahkan test sesuai risiko perubahan.
+9. Update `README.md` dan `architecture.md` jika perilaku API berubah.
+
+## Verifikasi
+
+Perintah lokal:
+
+```bash
+php artisan route:list --path=api
+php artisan test
+vendor/bin/pint --test
 ```
-StoreXxxRequest.php        ← validasi + otorisasi untuk POST
-UpdateXxxRequest.php       ← validasi + otorisasi untuk PUT/PATCH
-XxxController.php          ← di app/Http/Controllers/Api/
-XxxService.php             ← di app/Services/
-XxxResource.php            ← di app/Http/Resources/
-```
 
----
-
-## Catatan Pengembangan Fitur Baru
-
-Untuk menambah fitur baru (misal: `documents`), ikuti urutan ini:
-
-1. **Migration** — buat tabel (jika belum ada)
-2. **Model** — `$fillable`, `$casts`, relasi
-3. **Service** — `getAll`, `create`, `update`, `delete`
-4. **FormRequest** — `StoreXxxRequest` + `UpdateXxxRequest`
-5. **Resource** — `XxxResource`
-6. **Controller** — inject Service, gunakan FormRequest, return Resource
-7. **Route** — daftarkan di `routes/api.php` dalam group `auth:sanctum`
+Catatan: jika terminal Windows tidak boleh menulis ke folder Temp user, set `TEMP` dan `TMP` ke folder writable di project sebelum menjalankan test.
