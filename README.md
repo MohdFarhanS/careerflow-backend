@@ -82,6 +82,7 @@ Base URL: `http://localhost:8000/api`
 |--------|----------|-----------|
 | `GET` | `/user` | Mendapatkan data user yang login |
 | `POST` | `/logout` | Logout user |
+| `GET` | `/dashboard` | Statistik lamaran, chart bulanan, 5 lamaran terbaru |
 
 ### Applications (butuh autentikasi)
 
@@ -210,6 +211,30 @@ Base URL: `http://localhost:8000/api`
 }
 ```
 
+#### GET `/applications/{id}`
+
+**Response `200`:**
+```json
+{
+    "data": {
+        "id": 1,
+        "company_name": "PT Contoh Jaya",
+        "position": "Backend Developer",
+        "location": "Jakarta",
+        "job_url": "https://example.com/job/123",
+        "applied_date": "2026-06-14",
+        "salary_range": "8-12 juta",
+        "status": "Applied",
+        "notes": "Referral dari teman",
+        "interviews": [],
+        "created_at": "2026-06-14T00:00:00.000000Z",
+        "updated_at": "2026-06-14T00:00:00.000000Z"
+    }
+}
+```
+
+> Field `interviews` hanya muncul di endpoint detail ini, bukan di `GET /applications` (list).
+
 #### GET `/applications`
 
 **Response `200`:**
@@ -245,7 +270,7 @@ Base URL: `http://localhost:8000/api`
 | `company_name` | varchar(255) | Nama perusahaan |
 | `position` | varchar(255) | Posisi yang dilamar |
 | `location` | varchar(255) | Nullable |
-| `job_url` | varchar(255) | Nullable |
+| `job_url` | varchar(2048) | Nullable |
 | `applied_date` | date | Tanggal melamar |
 | `salary_range` | varchar(255) | Nullable |
 | `status` | enum | `Applied`, `Screening`, `Technical Test`, `Interview`, `Offered`, `Rejected` |
@@ -286,7 +311,8 @@ app/
 ├── Http/
 │   ├── Controllers/Api/
 │   │   ├── AuthController.php
-│   │   └── ApplicationController.php
+│   │   ├── ApplicationController.php
+│   │   └── DashboardController.php
 │   ├── Requests/
 │   │   ├── LoginRequest.php
 │   │   ├── RegisterRequest.php
@@ -297,12 +323,14 @@ app/
 │       └── ApplicationResource.php
 ├── Models/
 │   ├── User.php
-│   └── Application.php
+│   ├── Application.php
+│   └── Interview.php
 ├── Providers/
 │   └── AppServiceProvider.php
 └── Services/
     ├── AuthService.php
-    └── ApplicationService.php
+    ├── ApplicationService.php
+    └── DashboardService.php
 database/
 ├── migrations/
 └── seeders/

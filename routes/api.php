@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ApplicationController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\DashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,6 +22,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::get('/user',     [AuthController::class, 'user']);
     Route::post('/logout',  [AuthController::class, 'logout']);
+
+    // Dashboard
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
     // Applications
     Route::get('applications/schema', [ApplicationController::class, 'schema']);

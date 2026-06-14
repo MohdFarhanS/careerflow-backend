@@ -35,10 +35,15 @@ class UpdateApplicationRequest extends FormRequest
     {
         return [
             'company_name.required' => 'Nama perusahaan wajib diisi.',
+            'company_name.max'      => 'Nama perusahaan tidak boleh lebih dari 255 karakter.',
             'position.required'     => 'Posisi wajib diisi.',
+            'position.max'          => 'Posisi tidak boleh lebih dari 255 karakter.',
+            'location.max'          => 'Lokasi tidak boleh lebih dari 255 karakter.',
+            'job_url.url'           => 'Format URL tidak valid.',
+            'job_url.max'           => 'URL lowongan tidak boleh lebih dari 2048 karakter.',
             'applied_date.required' => 'Tanggal melamar wajib diisi.',
             'applied_date.date'     => 'Format tanggal tidak valid.',
-            'job_url.url'           => 'Format URL tidak valid.',
+            'salary_range.max'      => 'Kisaran gaji tidak boleh lebih dari 100 karakter.',
             'status.required'       => 'Status wajib dipilih.',
             'status.in'             => 'Status tidak valid.',
         ];

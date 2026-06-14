@@ -15,12 +15,13 @@ class ApplicationResource extends JsonResource
             'position'     => $this->position,
             'location'     => $this->location,
             'job_url'      => $this->job_url,
-            'applied_date' => $this->applied_date->toDateString(),
+            'applied_date' => $this->applied_date?->toDateString(),
             'salary_range' => $this->salary_range,
             'status'       => $this->status,
             'notes'        => $this->notes,
-            'created_at'   => $this->created_at->toISOString(),
-            'updated_at'   => $this->updated_at->toISOString(),
+            'interviews'   => $this->whenLoaded('interviews'),
+            'created_at'   => $this->created_at?->toISOString(),
+            'updated_at'   => $this->updated_at?->toISOString(),
         ];
     }
 }
