@@ -1,28 +1,32 @@
 <?php
 
-use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ApplicationController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\InterviewController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\DashboardController;
 
 /*
 |--------------------------------------------------------------------------
-| Public Routes
+| Public Routes (rate-limited)
 |--------------------------------------------------------------------------
 */
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login',    [AuthController::class, 'login']);
+Route::middleware('throttle:5,1')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+});
 
 /*
 |--------------------------------------------------------------------------
 | Protected Routes (Sanctum)
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // Auth
-    Route::get('/user',     [AuthController::class, 'user']);
-    Route::post('/logout',  [AuthController::class, 'logout']);
+    Route::get('/user', [AuthController::class, 'user']);
+    Route::post('/logout', [AuthController::class, 'logout']);
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index']);
@@ -33,5 +37,5 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Interviews
     Route::apiResource('interviews', InterviewController::class)
-    ->only(['index', 'store', 'update', 'destroy']);
+        ->only(['index', 'store', 'update', 'destroy']);
 });
