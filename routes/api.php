@@ -34,6 +34,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // Applications
     Route::get('applications/schema', [ApplicationController::class, 'schema']);
+    Route::patch('applications/{application}/notes', [ApplicationController::class, 'updateNotes']);
     Route::apiResource('applications', ApplicationController::class);
 
     // Interviews
