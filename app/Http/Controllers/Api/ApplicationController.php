@@ -113,16 +113,19 @@ class ApplicationController extends Controller
     /**
      * GET /api/applications/{id}
      */
-    public function show(Application $application): ApplicationResource|JsonResponse
+    public function show(Application $application): JsonResponse
     {
-        // Pastikan hanya pemilik yang bisa lihat
+        // Otorisasi manual
         if ($application->user_id !== auth()->id()) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
+        // Eager load interviews
         $application->load('interviews');
 
-        return new ApplicationResource($application);
+        return response()->json([
+            'application' => new ApplicationResource($application),
+        ]);
     }
 
     /**
