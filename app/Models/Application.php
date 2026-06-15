@@ -66,7 +66,8 @@ class Application extends Model
     public function scopeByLocation($query, ?string $location)
     {
         if ($location) {
-            $query->where('location', 'like', "%{$location}%");
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $location);
+            $query->where('location', 'like', "%{$escaped}%");
         }
 
         return $query;
@@ -78,9 +79,10 @@ class Application extends Model
     public function scopeSearch($query, ?string $keyword)
     {
         if ($keyword) {
-            $query->where(function ($q) use ($keyword) {
-                $q->where('company_name', 'like', "%{$keyword}%")
-                  ->orWhere('position', 'like', "%{$keyword}%");
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $keyword);
+            $query->where(function ($q) use ($escaped) {
+                $q->where('company_name', 'like', "%{$escaped}%")
+                  ->orWhere('position', 'like', "%{$escaped}%");
             });
         }
 
