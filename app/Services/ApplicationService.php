@@ -44,6 +44,16 @@ class ApplicationService
     }
 
     /**
+     * Update hanya field catatan pada lamaran.
+     */
+    public function updateNotes(Application $application, ?string $notes): Application
+    {
+        $application->update(['notes' => $notes]);
+
+        return $application->fresh();
+    }
+
+    /**
      * Hapus lamaran.
      */
     public function delete(Application $application): void

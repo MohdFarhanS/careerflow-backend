@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreApplicationRequest;
 use App\Http\Requests\UpdateApplicationRequest;
+use App\Http\Requests\UpdateNotesRequest;
 use App\Http\Resources\ApplicationResource;
 use App\Models\Application;
 use App\Services\ApplicationService;
@@ -138,6 +139,21 @@ class ApplicationController extends Controller
         return response()->json([
             'message'     => 'Lamaran berhasil diperbarui.',
             'application' => new ApplicationResource($updated),
+        ]);
+    }
+
+    /**
+     * PATCH /api/applications/{id}/notes
+     * Update khusus field catatan (dipakai NotesCard di detail lamaran).
+     * Otorisasi dilakukan di UpdateNotesRequest::authorize().
+     */
+    public function updateNotes(UpdateNotesRequest $request, Application $application): JsonResponse
+    {
+        $updated = $this->applicationService->updateNotes($application, $request->validated('notes'));
+
+        return response()->json([
+            'message' => 'Catatan berhasil disimpan.',
+            'notes'   => $updated->notes,
         ]);
     }
 
