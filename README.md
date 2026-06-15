@@ -264,6 +264,53 @@ Response `422` untuk token invalid atau kadaluarsa:
 }
 ```
 
+### GET `/user`
+
+Response `200`:
+
+```json
+{
+  "id": 1,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "created_at": "2026-06-14T00:00:00.000000Z"
+}
+```
+
+### GET `/dashboard`
+
+Response `200`:
+
+```json
+{
+  "total": 12,
+  "stats": {
+    "Applied": 3,
+    "Screening": 2,
+    "Technical Test": 1,
+    "Interview": 2,
+    "Offered": 1,
+    "Rejected": 3
+  },
+  "monthly_chart": [
+    { "month": "Jan", "count": 2 },
+    { "month": "Feb", "count": 1 },
+    { "month": "Mar", "count": 0 }
+  ],
+  "recent_applications": [
+    {
+      "id": 12,
+      "company_name": "PT Contoh Jaya",
+      "position": "Backend Developer",
+      "status": "Interview",
+      "applied_date": "2026-06-14",
+      "created_at": "2026-06-14T00:00:00.000000Z",
+      "updated_at": "2026-06-14T00:00:00.000000Z"
+    }
+  ]
+}
+```
+
 ### POST `/applications`
 
 ```json
