@@ -10,10 +10,11 @@ return new class extends Migration
     {
         Schema::create('documents', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->enum('type', ['CV', 'Portfolio'])->default('CV');
-            $table->string('file_name');
-            $table->string('file_path');
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('file_name');          // nama file asli: "CV_John.pdf"
+            $table->string('file_path');          // path di storage: "documents/user_1/..."
+            $table->string('document_type');      // "cv" atau "portfolio"
+            $table->unsignedBigInteger('file_size'); // ukuran file dalam bytes
             $table->timestamps();
         });
     }

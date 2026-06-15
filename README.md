@@ -165,6 +165,22 @@ Query `GET /interviews`:
 | `interview_type` | string | `Online` atau `Offline` |
 | `sort` | string | `soonest` default, `oldest`, atau `latest` |
 
+### Documents
+
+| Method | Endpoint | Deskripsi |
+| --- | --- | --- |
+| `GET` | `/documents` | List semua dokumen milik user |
+| `POST` | `/documents` | Upload dokumen baru atau simpan link portfolio (replace jika tipe sama sudah ada) |
+| `DELETE` | `/documents/{document}` | Hapus dokumen dan file fisiknya |
+
+Field `POST /documents` (multipart/form-data):
+
+| Field | Tipe | Deskripsi |
+| --- | --- | --- |
+| `document_type` | string | `cv` atau `portfolio` — wajib |
+| `file` | file (PDF) | Wajib jika `document_type=cv`; opsional jika `portfolio`. Maks 5MB |
+| `portfolio_url` | string | Wajib jika `document_type=portfolio` dan tidak ada file. URL max 2048 karakter |
+
 ## Contoh Request
 
 ### POST `/register`
@@ -339,6 +355,60 @@ Response `200`:
 }
 ```
 
+### POST `/documents` (upload file CV)
+
+Request `multipart/form-data`:
+
+```
+document_type=cv
+file=<file PDF, maks 5MB>
+```
+
+Response `201`:
+
+```json
+{
+  "message": "Dokumen berhasil diunggah.",
+  "document": {
+    "id": 1,
+    "file_name": "CV_John.pdf",
+    "document_type": "cv",
+    "file_size": 204800,
+    "file_url": "http://localhost:8000/storage/documents/1/CV_John.pdf",
+    "portfolio_url": null,
+    "created_at": "2026-06-15T00:00:00.000000Z",
+    "updated_at": "2026-06-15T00:00:00.000000Z"
+  }
+}
+```
+
+### POST `/documents` (simpan link portfolio)
+
+Request `multipart/form-data`:
+
+```
+document_type=portfolio
+portfolio_url=https://github.com/johndoe
+```
+
+Response `201`:
+
+```json
+{
+  "message": "Dokumen berhasil diunggah.",
+  "document": {
+    "id": 2,
+    "file_name": null,
+    "document_type": "portfolio",
+    "file_size": null,
+    "file_url": null,
+    "portfolio_url": "https://github.com/johndoe",
+    "created_at": "2026-06-15T00:00:00.000000Z",
+    "updated_at": "2026-06-15T00:00:00.000000Z"
+  }
+}
+```
+
 ## Struktur Database
 
 ### `users`
@@ -396,7 +466,18 @@ Dipakai karena `SESSION_DRIVER=database`.
 
 ### `documents`
 
-Migration sudah ada, tetapi fitur dokumen belum diimplementasikan di API.
+| Kolom | Keterangan |
+| --- | --- |
+| `id` | Primary key |
+| `user_id` | FK ke `users`, cascade delete |
+| `file_name` | Nama file asli, nullable (null untuk dokumen URL-based) |
+| `file_path` | Path file di storage public, nullable |
+| `document_type` | `cv` atau `portfolio` |
+| `file_size` | Ukuran file dalam bytes, nullable |
+| `portfolio_url` | URL portfolio, nullable (hanya diisi jika tidak ada file) |
+| `created_at`, `updated_at` | Timestamp |
+
+Setiap user hanya boleh memiliki satu dokumen per tipe. Upload dokumen dengan tipe yang sama akan menggantikan (replace) dokumen lama beserta file fisiknya.
 
 ## Struktur Folder
 
