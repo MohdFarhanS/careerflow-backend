@@ -22,22 +22,24 @@ class AuthController extends Controller
 
     public function register(RegisterRequest $request): JsonResponse
     {
-        $user = $this->authService->register($request->validated());
+        ['user' => $user, 'token' => $token] = $this->authService->register($request->validated());
 
         return response()->json([
             'message' => 'Registrasi berhasil.',
             'user' => new UserResource($user),
+            'token' => $token,
         ], 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
     {
         try {
-            $user = $this->authService->login($request->only('email', 'password'));
+            ['user' => $user, 'token' => $token] = $this->authService->login($request->only('email', 'password'));
 
             return response()->json([
                 'message' => 'Login berhasil.',
                 'user' => new UserResource($user),
+                'token' => $token,
             ]);
         } catch (AuthenticationException $e) {
             return response()->json([

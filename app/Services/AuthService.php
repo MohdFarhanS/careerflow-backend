@@ -6,13 +6,16 @@ use App\Models\User;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthService
 {
     /**
-     * Daftarkan user baru dan langsung login.
+     * Daftarkan user baru dan terbitkan API token.
+     *
+     * @return array{user: User, token: string}
      */
-    public function register(array $data): User
+    public function register(array $data): array
     {
         $user = User::create([
             'name'     => $data['name'],
@@ -20,35 +23,52 @@ class AuthService
             'password' => Hash::make($data['password']),
         ]);
 
-        Auth::login($user);
-
-        return $user;
+        return [
+            'user'  => $user,
+            'token' => $user->createToken('auth')->plainTextToken,
+        ];
     }
 
     /**
-     * Login user dengan kredensial email & password.
+     * Login user dengan kredensial email & password, terbitkan API token.
+     *
+     * @return array{user: User, token: string}
      *
      * @throws AuthenticationException
      */
-    public function login(array $credentials): User
+    public function login(array $credentials): array
     {
-        if (! Auth::attempt($credentials)) {
+        $user = User::where('email', $credentials['email'])->first();
+
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw new AuthenticationException('Email atau password salah.');
         }
 
-        request()->session()->regenerate();
-
-        return Auth::user();
+        return [
+            'user'  => $user,
+            'token' => $user->createToken('auth')->plainTextToken,
+        ];
     }
 
     /**
-     * Logout user aktif.
+     * Logout user aktif: hapus token aktif (mode token) dan/atau sesi (mode web).
      */
     public function logout(): void
     {
-        Auth::guard('web')->logout();
+        $user  = request()->user();
+        $token = $user?->currentAccessToken();
 
-        request()->session()->invalidate();
-        request()->session()->regenerateToken();
+        // Mode token: hapus hanya token yang dipakai request ini.
+        if ($token instanceof PersonalAccessToken) {
+            $token->delete();
+        }
+
+        // Backward-compat untuk sesi (mis. tes actingAs / dev same-origin).
+        if (Auth::guard('web')->check()) {
+            Auth::guard('web')->logout();
+
+            request()->session()->invalidate();
+            request()->session()->regenerateToken();
+        }
     }
 }
