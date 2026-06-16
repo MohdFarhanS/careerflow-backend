@@ -58,6 +58,6 @@ class DocumentController extends Controller
 
         $this->documentService->delete($document);
 
-        return response()->noContent();
+        return response()->json(['message' => 'Dokumen berhasil dihapus.']);
     }
 }
