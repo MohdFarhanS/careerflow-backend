@@ -1,13 +1,13 @@
-# CareerFlow Backend
+﻿# CareerFlow Backend
 
-REST API untuk aplikasi pelacak lamaran kerja CareerFlow. Backend ini dibangun dengan Laravel 12, Laravel Sanctum untuk autentikasi SPA berbasis session, dan struktur Controller -> Service -> Model.
+REST API untuk aplikasi pelacak lamaran kerja CareerFlow. Backend dibangun dengan Laravel 12 dan autentikasi Bearer token via Laravel Sanctum.
 
 ## Tech Stack
 
 - PHP 8.2+
 - Laravel 12
-- Laravel Sanctum 4 untuk SPA session authentication
-- MySQL atau SQLite
+- Laravel Sanctum 4 — Bearer token authentication
+- MySQL (production) / SQLite (development)
 - PHPUnit untuk test
 - Laravel Pint untuk code style
 
@@ -15,7 +15,6 @@ REST API untuk aplikasi pelacak lamaran kerja CareerFlow. Backend ini dibangun d
 
 - PHP >= 8.2
 - Composer
-- Node.js dan NPM
 - MySQL atau SQLite
 
 ## Instalasi
@@ -26,23 +25,17 @@ composer install
 cp .env.example .env
 php artisan key:generate
 php artisan migrate
-php artisan db:seed
 ```
-
-Seeder bersifat opsional. Jalankan hanya jika butuh data awal.
 
 ## Environment Penting
 
 ```env
 APP_URL=http://localhost:8000
 
-SANCTUM_STATEFUL_DOMAINS=localhost:5173,localhost:3000
 FRONTEND_URL=http://localhost:5173
 FRONTEND_URL_LOCAL=http://localhost:3000
 
-SESSION_DRIVER=database
-SESSION_DOMAIN=null
-SESSION_SECURE_COOKIE=false
+SANCTUM_STATEFUL_DOMAINS=localhost:5173,localhost:3000
 
 MAIL_MAILER=smtp
 MAIL_HOST=sandbox.smtp.mailtrap.io
@@ -53,12 +46,7 @@ MAIL_ENCRYPTION=tls
 MAIL_FROM_ADDRESS="noreply@careerflow.test"
 ```
 
-Catatan produksi:
-
-- Isi `FRONTEND_URL` dengan domain frontend produksi.
-- Kosongkan atau hapus `FRONTEND_URL_LOCAL` jika tidak ingin origin lokal diizinkan.
-- Gunakan `SESSION_SECURE_COOKIE=true` ketika API berjalan di HTTPS.
-- Pastikan `SANCTUM_STATEFUL_DOMAINS` berisi host frontend tanpa scheme, misalnya `app.example.com`.
+Lihat `ENVIRONMENT_VARIABLES.md` di root project untuk daftar lengkap variabel production.
 
 ## Menjalankan Server
 
@@ -68,41 +56,36 @@ php artisan serve
 
 Default server: `http://localhost:8000`.
 
-## CORS dan Sanctum
+## Autentikasi
 
-CORS membaca origin dari:
+CareerFlow menggunakan **Bearer token** (bukan cookie/session). Frontend dan backend berjalan di domain berbeda (Vercel/Railway), sehingga cookie lintas-domain tidak bisa digunakan.
 
-- `FRONTEND_URL`
-- `FRONTEND_URL_LOCAL`
+Flow autentikasi:
+1. `POST /api/register` atau `POST /api/login` → response berisi `{ user, token }`
+2. Simpan token di sisi frontend (localStorage)
+3. Setiap request berikutnya tambahkan header: `Authorization: Bearer {token}`
+4. `POST /api/logout` → backend hapus token, frontend hapus dari storage
 
-Sanctum menggunakan session cookie, bukan bearer token. Frontend SPA harus:
+Tidak ada langkah CSRF cookie. Tidak diperlukan `withCredentials`.
 
-1. Request `GET /sanctum/csrf-cookie`.
-2. Kirim request auth mutasi dengan cookie dan header CSRF, termasuk login, register, forgot password, dan reset password.
-3. Kirim request API berikutnya dengan session cookie.
+## CORS
 
-Pastikan HTTP client frontend memakai credentials, misalnya `withCredentials: true`.
+CORS membaca origin dari environment variable:
 
-Kontrak frontend auth:
-
-- `/login` dan `/register` mengirim `POST /api/login` atau `POST /api/register` setelah CSRF cookie tersedia.
-- `/forgot-password` mengirim `POST /api/forgot-password` dengan body `{ "email": "..." }`.
-- Email reset mengarah ke `/reset-password?token={token}&email={email}` pada `FRONTEND_URL`.
-- `/reset-password` mengirim `POST /api/reset-password` dengan `token`, `email`, `password`, dan `password_confirmation`.
-- Response validasi `422` dipertahankan sebagai error field; status lain dapat dipetakan frontend menjadi pesan umum seperti sesi berakhir, forbidden, not found, rate limited, atau server error.
+- `FRONTEND_URL` — domain frontend production
+- `FRONTEND_URL_LOCAL` — domain frontend lokal (opsional)
 
 ## Keamanan API
 
-- Public auth routes memakai rate limit `throttle:5,1`.
-- Protected routes memakai `auth:sanctum` dan `throttle:60,1`.
-- Response JSON untuk rate limit mengembalikan pesan `Terlalu banyak percobaan...` dengan status `429`.
+- Public auth routes rate limit: `throttle:5,1`
+- Protected routes: `auth:sanctum` + `throttle:60,1`
 - Middleware `SecurityHeaders` menambahkan:
   - `X-Frame-Options: DENY`
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: strict-origin-when-cross-origin`
   - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
-- Password register dan reset minimal 8 karakter, memiliki huruf besar/kecil, dan angka.
-- Forgot password selalu mengembalikan `200` agar status email terdaftar tidak terekspos.
+- Password minimal 8 karakter, huruf besar/kecil, dan angka
+- Forgot password selalu `200` (tidak mengekspos status email terdaftar)
 
 ## API Endpoints
 
@@ -111,392 +94,117 @@ Base URL: `http://localhost:8000/api`
 ### Public
 
 | Method | Endpoint | Deskripsi |
-| --- | --- | --- |
-| `POST` | `/register` | Registrasi user baru dan login session |
-| `POST` | `/login` | Login user |
-| `POST` | `/forgot-password` | Kirim email reset password jika email terdaftar |
-| `POST` | `/reset-password` | Reset password memakai token dari email |
+|---|---|---|
+| `POST` | `/register` | Registrasi user baru, mengembalikan Bearer token |
+| `POST` | `/login` | Login user, mengembalikan Bearer token |
+| `POST` | `/forgot-password` | Kirim email reset password |
+| `POST` | `/reset-password` | Reset password dengan token dari email |
 
-### Protected
-
-Semua endpoint berikut butuh autentikasi Sanctum.
+### Protected (butuh `Authorization: Bearer {token}`)
 
 | Method | Endpoint | Deskripsi |
-| --- | --- | --- |
+|---|---|---|
 | `GET` | `/user` | Data user yang sedang login |
-| `POST` | `/logout` | Logout dan invalidate session |
-| `GET` | `/dashboard` | Statistik lamaran, chart bulanan, dan 5 lamaran terbaru |
+| `POST` | `/logout` | Logout dan hapus token aktif |
+| `GET` | `/dashboard` | Statistik lamaran, chart bulanan, 5 lamaran terbaru |
 
 ### Applications
 
 | Method | Endpoint | Deskripsi |
-| --- | --- | --- |
+|---|---|---|
 | `GET` | `/applications/schema` | Metadata field form lamaran |
 | `GET` | `/applications` | List lamaran dengan filter, search, dan pagination |
 | `POST` | `/applications` | Tambah lamaran |
-| `GET` | `/applications/{application}` | Detail lamaran termasuk interview |
-| `PUT/PATCH` | `/applications/{application}` | Update lamaran |
-| `DELETE` | `/applications/{application}` | Hapus lamaran |
+| `GET` | `/applications/{id}` | Detail lamaran beserta daftar interview |
+| `PUT` | `/applications/{id}` | Update lamaran |
+| `PATCH` | `/applications/{id}/notes` | Update notes saja |
+| `DELETE` | `/applications/{id}` | Hapus lamaran |
 
 Query `GET /applications`:
 
-| Parameter | Tipe | Deskripsi |
-| --- | --- | --- |
-| `search` | string | Cari berdasarkan perusahaan atau posisi |
-| `status` | string | Filter status, misalnya `Applied` |
-| `location` | string | Filter lokasi secara partial match |
-| `sort` | string | `newest` default atau `oldest` |
+| Parameter | Deskripsi |
+|---|---|
+| `search` | Cari berdasarkan perusahaan atau posisi |
+| `status` | Filter status (`Applied`, `Screening`, dll.) |
+| `location` | Filter lokasi (partial match) |
+| `sort` | `newest` (default) atau `oldest` |
+| `page` | Halaman (default 1, 10 item per halaman) |
 
 ### Interviews
 
 | Method | Endpoint | Deskripsi |
-| --- | --- | --- |
+|---|---|---|
 | `GET` | `/interviews` | List interview milik user |
 | `POST` | `/interviews` | Tambah interview |
-| `PUT/PATCH` | `/interviews/{interview}` | Update interview |
-| `DELETE` | `/interviews/{interview}` | Hapus interview |
+| `PUT` | `/interviews/{id}` | Update interview |
+| `DELETE` | `/interviews/{id}` | Hapus interview |
 
 Query `GET /interviews`:
 
-| Parameter | Tipe | Deskripsi |
-| --- | --- | --- |
-| `upcoming` | string | `true` untuk interview yang belum lewat |
-| `application_id` | integer | Filter interview per lamaran |
-| `interview_type` | string | `Online` atau `Offline` |
-| `sort` | string | `soonest` default, `oldest`, atau `latest` |
+| Parameter | Deskripsi |
+|---|---|
+| `upcoming` | `true` untuk interview yang belum lewat |
+| `application_id` | Filter interview per lamaran |
+| `interview_type` | `Online` atau `Offline` |
+| `sort` | `soonest` (default), `oldest`, atau `latest` |
 
 ### Documents
 
 | Method | Endpoint | Deskripsi |
-| --- | --- | --- |
-| `GET` | `/documents` | List semua dokumen milik user |
-| `POST` | `/documents` | Upload dokumen baru atau simpan link portfolio (replace jika tipe sama sudah ada) |
-| `DELETE` | `/documents/{document}` | Hapus dokumen dan file fisiknya |
+|---|---|---|
+| `GET` | `/documents` | List dokumen milik user |
+| `POST` | `/documents` | Upload CV (PDF) atau simpan link portfolio |
+| `DELETE` | `/documents/{id}` | Hapus dokumen dan file fisiknya |
 
-Field `POST /documents` (multipart/form-data):
+Field `POST /documents` (`multipart/form-data`):
 
-| Field | Tipe | Deskripsi |
-| --- | --- | --- |
-| `document_type` | string | `cv` atau `portfolio` — wajib |
-| `file` | file (PDF) | Wajib jika `document_type=cv`; opsional jika `portfolio`. Maks 5MB |
-| `portfolio_url` | string | Wajib jika `document_type=portfolio` dan tidak ada file. URL max 2048 karakter |
+| Field | Deskripsi |
+|---|---|
+| `document_type` | `cv` atau `portfolio` — wajib |
+| `file` | File PDF, maks 5MB (wajib untuk CV) |
+| `portfolio_url` | URL portfolio (wajib jika portfolio tanpa file) |
 
-## Contoh Request
+Setiap user hanya boleh memiliki satu dokumen per tipe. Upload baru otomatis replace yang lama.
 
-### POST `/register`
+## Contoh Response
 
-```json
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "Password123",
-  "password_confirmation": "Password123"
-}
-```
-
-Response `201`:
-
-```json
-{
-  "message": "Registrasi berhasil.",
-  "user": {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2026-06-14T00:00:00.000000Z"
-  }
-}
-```
-
-### POST `/login`
-
-```json
-{
-  "email": "john@example.com",
-  "password": "Password123"
-}
-```
-
-Response `200`:
+### POST `/register` atau `/login` — `200`/`201`
 
 ```json
 {
   "message": "Login berhasil.",
-  "user": {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2026-06-14T00:00:00.000000Z"
-  }
+  "user": { "id": 1, "name": "John Doe", "email": "john@example.com" },
+  "token": "1|abc123..."
 }
 ```
 
-### POST `/forgot-password`
+### POST `/forgot-password` — `200`
 
 ```json
-{
-  "email": "john@example.com"
-}
+{ "message": "Jika email tersebut terdaftar, link reset password telah dikirim." }
 ```
 
-Response `200`:
-
-```json
-{
-  "message": "Jika email tersebut terdaftar, link reset password telah dikirim."
-}
-```
-
-Link reset diarahkan ke:
-
-```text
-{FRONTEND_URL}/reset-password?token={token}&email={email}
-```
-
-### POST `/reset-password`
-
-```json
-{
-  "token": "reset-token-from-email",
-  "email": "john@example.com",
-  "password": "NewPassword123",
-  "password_confirmation": "NewPassword123"
-}
-```
-
-Response `200`:
-
-```json
-{
-  "message": "Password berhasil direset."
-}
-```
-
-Response `422` untuk token invalid atau kadaluarsa:
-
-```json
-{
-  "message": "Token tidak valid atau sudah kadaluarsa."
-}
-```
-
-### GET `/user`
-
-Response `200`:
-
-```json
-{
-  "id": 1,
-  "name": "John Doe",
-  "email": "john@example.com",
-  "created_at": "2026-06-14T00:00:00.000000Z"
-}
-```
-
-### GET `/dashboard`
-
-Response `200`:
+### GET `/dashboard` — `200`
 
 ```json
 {
   "total": 12,
-  "stats": {
-    "Applied": 3,
-    "Screening": 2,
-    "Technical Test": 1,
-    "Interview": 2,
-    "Offered": 1,
-    "Rejected": 3
-  },
-  "monthly_chart": [
-    { "month": "Jan", "count": 2 },
-    { "month": "Feb", "count": 1 },
-    { "month": "Mar", "count": 0 }
-  ],
-  "recent_applications": [
-    {
-      "id": 12,
-      "company_name": "PT Contoh Jaya",
-      "position": "Backend Developer",
-      "status": "Interview",
-      "applied_date": "2026-06-14",
-      "created_at": "2026-06-14T00:00:00.000000Z",
-      "updated_at": "2026-06-14T00:00:00.000000Z"
-    }
-  ]
-}
-```
-
-### POST `/applications`
-
-```json
-{
-  "company_name": "PT Contoh Jaya",
-  "position": "Backend Developer",
-  "applied_date": "2026-06-14",
-  "status": "Applied",
-  "location": "Jakarta",
-  "job_url": "https://example.com/job/123",
-  "salary_range": "8-12 juta",
-  "notes": "Referral dari teman"
-}
-```
-
-### POST `/interviews`
-
-```json
-{
-  "application_id": 1,
-  "interview_date": "2026-06-20",
-  "interview_time": "10:00",
-  "interview_type": "Online",
-  "meeting_url": "https://meet.google.com/abc-xyz",
-  "notes": "Bawa portfolio"
-}
-```
-
-### POST `/documents` (upload file CV)
-
-Request `multipart/form-data`:
-
-```
-document_type=cv
-file=<file PDF, maks 5MB>
-```
-
-Response `201`:
-
-```json
-{
-  "message": "Dokumen berhasil diunggah.",
-  "document": {
-    "id": 1,
-    "file_name": "CV_John.pdf",
-    "document_type": "cv",
-    "file_size": 204800,
-    "file_url": "http://localhost:8000/storage/documents/1/CV_John.pdf",
-    "portfolio_url": null,
-    "created_at": "2026-06-15T00:00:00.000000Z",
-    "updated_at": "2026-06-15T00:00:00.000000Z"
-  }
-}
-```
-
-### POST `/documents` (simpan link portfolio)
-
-Request `multipart/form-data`:
-
-```
-document_type=portfolio
-portfolio_url=https://github.com/johndoe
-```
-
-Response `201`:
-
-```json
-{
-  "message": "Dokumen berhasil diunggah.",
-  "document": {
-    "id": 2,
-    "file_name": null,
-    "document_type": "portfolio",
-    "file_size": null,
-    "file_url": null,
-    "portfolio_url": "https://github.com/johndoe",
-    "created_at": "2026-06-15T00:00:00.000000Z",
-    "updated_at": "2026-06-15T00:00:00.000000Z"
-  }
+  "stats": { "Applied": 3, "Screening": 2, "Interview": 2, "Offered": 1, "Rejected": 3 },
+  "monthly_chart": [{ "month": "Jan", "count": 2 }],
+  "recent_applications": [{ "id": 12, "company_name": "PT Contoh", "position": "Dev", "status": "Interview" }]
 }
 ```
 
 ## Struktur Database
 
-### `users`
-
-| Kolom | Keterangan |
-| --- | --- |
-| `id` | Primary key |
-| `name` | Nama user |
-| `email` | Email unik |
-| `email_verified_at` | Nullable |
-| `password` | Hash password |
-| `remember_token` | Token remember session |
-| `created_at`, `updated_at` | Timestamp |
-
-### `password_reset_tokens`
-
-| Kolom | Keterangan |
-| --- | --- |
-| `email` | Primary key |
-| `token` | Token reset password |
-| `created_at` | Waktu token dibuat |
-
-### `sessions`
-
-Dipakai karena `SESSION_DRIVER=database`.
-
-### `applications`
-
-| Kolom | Keterangan |
-| --- | --- |
-| `id` | Primary key |
-| `user_id` | FK ke `users`, cascade delete |
-| `company_name` | Nama perusahaan |
-| `position` | Posisi yang dilamar |
-| `location` | Nullable |
-| `job_url` | Nullable, panjang sampai 2048 |
-| `applied_date` | Tanggal melamar |
-| `salary_range` | Nullable |
-| `status` | `Applied`, `Screening`, `Technical Test`, `Interview`, `Offered`, `Rejected` |
-| `notes` | Nullable |
-| `created_at`, `updated_at` | Timestamp |
-
-### `interviews`
-
-| Kolom | Keterangan |
-| --- | --- |
-| `id` | Primary key |
-| `application_id` | FK ke `applications`, cascade delete |
-| `interview_date` | Tanggal interview |
-| `interview_time` | Jam interview |
-| `interview_type` | `Online` atau `Offline` |
-| `meeting_url` | Nullable |
-| `notes` | Nullable |
-| `created_at`, `updated_at` | Timestamp |
-
-### `documents`
-
-| Kolom | Keterangan |
-| --- | --- |
-| `id` | Primary key |
-| `user_id` | FK ke `users`, cascade delete |
-| `file_name` | Nama file asli, nullable (null untuk dokumen URL-based) |
-| `file_path` | Path file di storage public, nullable |
-| `document_type` | `cv` atau `portfolio` |
-| `file_size` | Ukuran file dalam bytes, nullable |
-| `portfolio_url` | URL portfolio, nullable (hanya diisi jika tidak ada file) |
-| `created_at`, `updated_at` | Timestamp |
-
-Setiap user hanya boleh memiliki satu dokumen per tipe. Upload dokumen dengan tipe yang sama akan menggantikan (replace) dokumen lama beserta file fisiknya.
-
-## Struktur Folder
-
-```text
-app/
-  Http/
-    Controllers/Api/
-    Middleware/
-    Requests/
-    Resources/
-  Models/
-  Providers/
-  Services/
-database/
-  migrations/
-  seeders/
-routes/
-  api.php
-```
+| Tabel | Keterangan |
+|---|---|
+| `users` | User dengan email unik |
+| `personal_access_tokens` | Sanctum Bearer tokens |
+| `applications` | Lamaran kerja, FK ke `users` |
+| `interviews` | Interview, FK ke `applications` |
+| `documents` | CV dan portfolio, FK ke `users` |
+| `password_reset_tokens` | Token reset password |
 
 ## Testing dan Formatting
 
@@ -505,12 +213,19 @@ php artisan test
 vendor/bin/pint --test
 ```
 
-Jika menjalankan test dari sandbox Windows dan folder Temp user tidak bisa ditulis, arahkan `TEMP` dan `TMP` ke folder dalam project terlebih dahulu.
+## Deployment (Railway)
+
+Konfigurasi ada di `railway.json`. Setiap deploy otomatis menjalankan:
+```bash
+php artisan migrate --force
+```
+
+Set environment variables berikut di Railway dashboard (lihat `ENVIRONMENT_VARIABLES.md`):
+`APP_KEY`, `APP_ENV`, `APP_DEBUG`, `APP_URL`, `DB_URL`, `FRONTEND_URL`, `MAIL_MAILER`, `RESEND_API_KEY`, `MAIL_FROM_ADDRESS`
 
 ## Development Scripts
 
 ```bash
-composer dev
-composer setup
-composer test
+composer dev    # Jalankan server + queue + log watcher sekaligus
+composer test   # Test + code style check
 ```
