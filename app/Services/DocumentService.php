@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Document;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class DocumentService
@@ -26,36 +27,49 @@ class DocumentService
      */
     public function upload(?UploadedFile $file, string $documentType, ?string $portfolioUrl = null): Document
     {
-        $existing = Auth::user()
-            ->documents()
-            ->where('document_type', $documentType)
-            ->first();
+        // Simpan file baru lebih dulu. Filesystem tidak transaksional, jadi
+        // operasi store dilakukan di luar DB::transaction agar bisa di-cleanup
+        // manual bila penulisan database gagal (mencegah file orphan).
+        $newPath = $file
+            ? $file->store('documents/' . Auth::id(), 'public')
+            : null;
 
-        if ($existing) {
-            $this->deleteFile($existing);
-            $existing->delete();
+        try {
+            $result = DB::transaction(function () use ($file, $newPath, $documentType, $portfolioUrl) {
+                $existing = Auth::user()
+                    ->documents()
+                    ->where('document_type', $documentType)
+                    ->first();
+
+                // Hapus record lama; file fisiknya baru dihapus setelah commit sukses.
+                if ($existing) {
+                    $existing->delete();
+                }
+
+                $document = Auth::user()->documents()->create([
+                    'file_name'     => $file?->getClientOriginalName(),
+                    'file_path'     => $newPath,
+                    'document_type' => $documentType,
+                    'file_size'     => $file?->getSize(),
+                    'portfolio_url' => $file ? null : $portfolioUrl,
+                ]);
+
+                return ['document' => $document, 'existing' => $existing];
+            });
+        } catch (\Throwable $e) {
+            // DB gagal → buang file baru yang sudah terlanjur tersimpan.
+            if ($newPath) {
+                Storage::disk('public')->delete($newPath);
+            }
+            throw $e;
         }
 
-        if ($file) {
-            $folder = 'documents/' . Auth::id();
-            $path   = $file->store($folder, 'public');
-
-            return Auth::user()->documents()->create([
-                'file_name'     => $file->getClientOriginalName(),
-                'file_path'     => $path,
-                'document_type' => $documentType,
-                'file_size'     => $file->getSize(),
-                'portfolio_url' => null,
-            ]);
+        // Commit sukses → baru hapus file fisik milik record lama (jika ada).
+        if ($result['existing']) {
+            $this->deleteFile($result['existing']);
         }
 
-        return Auth::user()->documents()->create([
-            'file_name'     => null,
-            'file_path'     => null,
-            'document_type' => $documentType,
-            'file_size'     => null,
-            'portfolio_url' => $portfolioUrl,
-        ]);
+        return $result['document'];
     }
 
     /**

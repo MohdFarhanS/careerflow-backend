@@ -14,7 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->statefulApi();
+        // Auth proyek ini murni token-based (Bearer) — FE & BE beda root-domain
+        // (lihat CLAUDE.md), jadi tidak memakai jalur SPA cookie/session Sanctum.
+        // statefulApi() sengaja TIDAK dipakai: ia memaksa CSRF pada request dari
+        // stateful domain (mis. localhost:3000) sehingga /api/login balas 419.
         $middleware->api(prepend: [
             SecurityHeaders::class,
         ]);
